@@ -425,12 +425,14 @@
       let bulletDamage = INIT.BULLET.DAMAGE;
       let bulletPenetration = INIT.BULLET.PENETRATION;
       let bulletKnockback = INIT.BULLET.KNOCKBACK;
-      let bulletRange = INIT.BULLET.RANGE;
+      let bulletRangeBase = INIT.BULLET.RANGE;   // 기본 사정거리 (화면 크기 기준 비율 유지)
+      let bulletRange = bulletRangeBase;
       let bulletLifeSteal = INIT.BULLET.LIFESTEAL;
 
       let enemyContactDamage = INIT.ENEMY.CONTACT_DAMAGE;
       let enemyReward = INIT.ENEMY.REWARD;
-      let enemySize = INIT.ENEMY.SIZE;
+      let enemySizeBase = INIT.ENEMY.SIZE;       // 기본 적 크기 (스크린 스케일 반영)
+      let enemySize = enemySizeBase;
 
       // 웨이브 관련
       const waveDurations = [30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80]; // 각 웨이브 진행 시간(초)
@@ -448,11 +450,12 @@
       ];
 
       // 적 종류
-      const enemyTypes = [
-        { id: 'balanced', hpMul: 1, speedMul: 1, damageMul: 1, range: 0, defense: 0 },
-        { id: 'offense', hpMul: 0.6, speedMul: 2, damageMul: 2, range: 30, defense: 0 },
-        { id: 'tank', hpMul: 2, speedMul: 0.7, damageMul: 1, range: 0, defense: 20, knockbackImmune: true },
-      ];
+        const enemyTypes = [
+          { id: 'balanced', hpMul: 1, speedMul: 1, damageMul: 1, range: 0, defense: 0 },
+          { id: 'offense', hpMul: 0.6, speedMul: 2, damageMul: 2, range: 30, defense: 0 },
+          { id: 'tank', hpMul: 2, speedMul: 0.7, damageMul: 1, range: 0, defense: 20, knockbackImmune: true },
+        ];
+        for (const t of enemyTypes) t.baseRange = t.range;
 
       // 스폰 관련 (발생 주기 1.5배 빈번하게)
       let initialSpawnInterval = 1300; // 초기 적 스폰 간격 (ms) - 2000에서 1300으로
@@ -469,19 +472,32 @@
       let expOrbValue = INIT.EXP.ORB_VALUE;             // 경험치 구슬 하나당 경험치
       let expOrbSpeed = INIT.EXP.ORB_SPEED;           // 경험치 구슬 이동 속도 (px/s)
       let expOrbSize = INIT.EXP.ORB_SIZE;              // 경험치 구슬 크기
-      let magnetRadius = 0;            // 자석 범위 (px)
+      let magnetRadiusBase = 0;        // 자석 범위 (스크린 비율 적용 전)
+      let magnetRadius = magnetRadiusBase;
       let magnetPullSpeed = 400;       // 자석 당기는 속도 (px/s)
 
       // 궤도 구슬 관련
       let orbitingOrbs = [];           // 궤도 구슬 배열
-      let orbitalRadius = INIT.ORBITAL.RADIUS;          // 궤도 반지름
+      let orbitalRadiusBase = INIT.ORBITAL.RADIUS;      // 기본 궤도 반지름
+      let orbitalRadius = orbitalRadiusBase;
       let orbitalSpeed = INIT.ORBITAL.SPEED;            // 궤도 회전 속도 (rad/s)
       let orbitalDamage = INIT.ORBITAL.DAMAGE;         // 궤도 구슬 피해량
 
       // 레벨업 임펄스 설정
       let levelUpImpulseDamage = INIT.LEVELUP.DAMAGE;   // 레벨업 시 주변 적에게 줄 피해
-      let levelUpImpulseRadius = INIT.LEVELUP.RADIUS;   // 임펄스 범위 (px)
+      let levelUpImpulseRadiusBase = INIT.LEVELUP.RADIUS; // 기본 임펄스 범위 (px)
+      let levelUpImpulseRadius = levelUpImpulseRadiusBase;
       let levelUpImpulseKnockback = INIT.LEVELUP.KNOCKBACK; // 넉백 거리 (px) - 넉백 2단계 업그레이드와 동일
+
+      // 폭탄 관련
+      const bombs = [];
+      const explosions = [];
+      let bombTimer = 0;
+      let bombCooldown = 2500; // ms
+      let bombDamage = 100;
+      let bombRadiusBase = 60;        // 기본 폭탄 반경
+      let bombRadius = bombRadiusBase;
+      let bombEnabled = false;
 
       // 업그레이드 옵션들
       const UPGRADES = [
@@ -558,8 +574,11 @@
           id: 'range',
           title: '사거리 증가',
           icon: '📏',
-          desc: '총알 사정거리 +20%',
-          apply: () => { bulletRange *= 1.2; }
+            desc: '총알 사정거리 +20%',
+            apply: () => {
+              bulletRangeBase *= 1.2;
+              bulletRange = bulletRangeBase * worldScale;
+            }
         },
         {
           id: 'lifesteal',
@@ -572,8 +591,11 @@
           id: 'magnet',
           title: '자석',
           icon: '🧲',
-          desc: '주변의 경험치 구슬을 끌어당깁니다 (범위 +80)',
-          apply: () => { magnetRadius += 80; }
+            desc: '주변의 경험치 구슬을 끌어당깁니다 (범위 +80)',
+            apply: () => {
+              magnetRadiusBase += 80;
+              magnetRadius = magnetRadiusBase * worldScale;
+            }
         },
           {
             id: 'expBoost',
@@ -593,7 +615,8 @@
                 bombEnabled = true;
               } else {
                 bombDamage *= 1.5;
-                bombRadius *= 1.2;
+                bombRadiusBase *= 1.2;
+                bombRadius = bombRadiusBase * worldScale;
               }
             }
           },
@@ -646,6 +669,17 @@
       const canvas = document.getElementById('game');
       const ctx = canvas.getContext('2d');
 
+      // 기본 월드 크기 (960x540)
+      const BASE_WIDTH = canvas.width;
+      const BASE_HEIGHT = canvas.height;
+      const BASE_GROUND_OFFSET = 60;
+      let worldScale = 1;
+      const WORLD = {
+        w: canvas.width,
+        h: canvas.height,
+        groundY: canvas.height - BASE_GROUND_OFFSET,
+      };
+
       // --- 게임 상태 ---
       let running = false;
       let paused = false;              // 레벨업/ESC 일시정지
@@ -669,17 +703,26 @@
         }
         wrap.style.width = targetW + 'px';
         wrap.style.height = targetH + 'px';
-        const scale = targetW / 960;
-        document.documentElement.style.setProperty('--ui-scale', scale);
+
+        worldScale = targetW / BASE_WIDTH;
+        document.documentElement.style.setProperty('--ui-scale', worldScale);
+
+        canvas.width = targetW;
+        canvas.height = targetH;
+        WORLD.w = canvas.width;
+        WORLD.h = canvas.height;
+        WORLD.groundY = canvas.height - BASE_GROUND_OFFSET * worldScale;
+
+        enemySize = enemySizeBase * worldScale;
+        bulletRange = bulletRangeBase * worldScale;
+        bombRadius = bombRadiusBase * worldScale;
+        orbitalRadius = orbitalRadiusBase * worldScale;
+        levelUpImpulseRadius = levelUpImpulseRadiusBase * worldScale;
+        magnetRadius = magnetRadiusBase * worldScale;
+        for (const t of enemyTypes) t.range = t.baseRange * worldScale;
       }
       window.addEventListener('resize', fitCanvas);
       fitCanvas();
-
-      const WORLD = {
-        w: canvas.width,
-        h: canvas.height,
-        groundY: canvas.height - 60,
-      };
 
       // --- 플레이어 ---
       const player = {
@@ -706,15 +749,6 @@
       // --- 투사체(자동 공격) ---
       const bullets = [];
       let shootTimer = 0;
-
-      // --- 폭탄 ---
-      const bombs = [];
-      const explosions = [];
-      let bombTimer = 0;
-      let bombCooldown = 2500; // ms
-      let bombDamage = 100;
-      let bombRadius = 60;
-      let bombEnabled = false;
 
       // --- 얼음 바닥 ---
       const iceFloors = [];
@@ -845,14 +879,25 @@
         bulletDamage = INIT.BULLET.DAMAGE;
         bulletCooldown = INIT.BULLET.COOLDOWN;
         bulletPenetration = INIT.BULLET.PENETRATION;
-        bulletKnockback = INIT.BULLET.KNOCKBACK;
-        bulletRange = INIT.BULLET.RANGE;
-        bulletLifeSteal = INIT.BULLET.LIFESTEAL;
-        magnetRadius = 0;
-        expOrbValue = INIT.EXP.ORB_VALUE;
-        playerDefense = INIT.PLAYER.DEFENSE;
-        playerHP = INIT.PLAYER.HP;
-        hp = playerHP;
+          bulletKnockback = INIT.BULLET.KNOCKBACK;
+          bulletRangeBase = INIT.BULLET.RANGE;
+          bulletRange = bulletRangeBase * worldScale;
+          bulletLifeSteal = INIT.BULLET.LIFESTEAL;
+          bombRadiusBase = 60;
+          bombRadius = bombRadiusBase * worldScale;
+          orbitalRadiusBase = INIT.ORBITAL.RADIUS;
+          orbitalRadius = orbitalRadiusBase * worldScale;
+          levelUpImpulseRadiusBase = INIT.LEVELUP.RADIUS;
+          levelUpImpulseRadius = levelUpImpulseRadiusBase * worldScale;
+          enemySizeBase = INIT.ENEMY.SIZE;
+          enemySize = enemySizeBase * worldScale;
+          for (const t of enemyTypes) t.range = t.baseRange * worldScale;
+          magnetRadiusBase = 0;
+          magnetRadius = magnetRadiusBase * worldScale;
+          expOrbValue = INIT.EXP.ORB_VALUE;
+          playerDefense = INIT.PLAYER.DEFENSE;
+          playerHP = INIT.PLAYER.HP;
+          hp = playerHP;
         iceFloors.length = 0;
         iceFloorTimer = 0;
         iceFloorEnabled = false;
@@ -1314,10 +1359,10 @@
         if (iceFloorEnabled && iceFloorTimer >= iceFloorSpawnInterval) {
           iceFloorTimer = 0;
           iceFloors.push({
-            x: player.x + player.w / 2 - 30,
-            y: WORLD.groundY - 10,
-            w: 60,
-            h: 10,
+            x: player.x + player.w / 2 - 30 * worldScale,
+            y: WORLD.groundY - 10 * worldScale,
+            w: 60 * worldScale,
+            h: 10 * worldScale,
             life: 0,
             duration: iceFloorDuration,
             damage: iceFloorDamage,
