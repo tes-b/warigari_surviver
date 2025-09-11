@@ -587,6 +587,7 @@ Press CTRL+C to abort or wait for forced reboot in 30 seconds.
           RANGE: 180, // 요요 사정거리 (px)
           KNOCKBACK: 0, // 요요 넉백 거리 (px)
           TRAVEL_TIME: 450, // 최대 사거리 도달 시간 (ms)
+          COLOR: "#facc15", // 요요 색상
         },
         // 검 관련
         SWORD: {
@@ -628,6 +629,7 @@ Press CTRL+C to abort or wait for forced reboot in 30 seconds.
       let yoyoRange = INIT.YOYO.RANGE;
       let yoyoKnockback = INIT.YOYO.KNOCKBACK;
       let yoyoTravelTime = INIT.YOYO.TRAVEL_TIME;
+      let yoyoColor = INIT.YOYO.COLOR;
       let yoyoSpeed = yoyoRange / (yoyoTravelTime / 1000);
       let lifeSteal = INIT.BULLET.LIFESTEAL;
 
@@ -3190,6 +3192,57 @@ Press CTRL+C to abort or wait for forced reboot in 30 seconds.
         ctx.quadraticCurveTo(player.x, player.y, player.x + radius, player.y);
         ctx.fill();
 
+        // 캡 (요요 기본 공격 시)
+        if (baseAttack === "yoyo") {
+          ctx.fillStyle = yoyoColor;
+          const dir = player.dir;
+          const capWidth = player.w * 0.9;
+          const capHeight = player.h * 0.5;
+
+          ctx.save();
+          if (dir < 0) {
+            ctx.translate(player.x + player.w, 0);
+            ctx.scale(-1, 1);
+          }
+
+          const capX = player.x + player.w * 0.05;
+          const capY = player.y - capHeight;
+
+          // 모자 본체
+          ctx.beginPath();
+          ctx.moveTo(capX, capY + capHeight);
+          ctx.quadraticCurveTo(
+            capX + capWidth * 0.2,
+            capY,
+            capX + capWidth * 0.8,
+            capY + capHeight * 0.2,
+          );
+          ctx.quadraticCurveTo(
+            capX + capWidth,
+            capY + capHeight * 0.3,
+            capX + capWidth * 0.9,
+            capY + capHeight,
+          );
+          ctx.closePath();
+          ctx.fill();
+
+          // 챙
+          ctx.beginPath();
+          const brimStartX = capX + capWidth;
+          const brimStartY = player.y - capHeight * 0.1;
+          ctx.moveTo(brimStartX, brimStartY);
+          ctx.quadraticCurveTo(
+            brimStartX + capWidth * 0.6,
+            brimStartY + capHeight * 0.15,
+            brimStartX,
+            brimStartY + capHeight * 0.3,
+          );
+          ctx.closePath();
+          ctx.fill();
+
+          ctx.restore();
+        }
+
         // 눈 (방향에 따라 위치 변경)
         ctx.fillStyle = "#2a4177";
         const eyeY = player.y + player.h * 0.3;
@@ -3404,7 +3457,7 @@ Press CTRL+C to abort or wait for forced reboot in 30 seconds.
 
         // 요요
         for (const y of yoyos) {
-          ctx.fillStyle = "#facc15";
+          ctx.fillStyle = yoyoColor;
           ctx.beginPath();
           ctx.arc(y.x + y.w / 2, y.y + y.h / 2, y.w / 2, 0, Math.PI * 2);
           ctx.fill();
